@@ -4597,8 +4597,8 @@ static void handle_opaque_block(void *varying pBlock, const varying color_quad_i
 	encode_bc7_block(pBlock, &opt_results);
 }
 
-// all opaque solid color blocks can be 100% perfectly encoded with just mode 5
-static void handle_opaque_block_solid(void *varying pBlock, uint32_t cr, uint32_t cg, uint32_t cb)
+// all solid color blocks can be 100% perfectly encoded with just mode 5
+static void handle_block_solid(void *varying pBlock, uint32_t cr, uint32_t cg, uint32_t cb, uint32_t ca)
 {
 	#pragma ignore warning(perf)
 	uint32_t er = g_bc7_mode_5_optimal_endpoints[cr];
@@ -4607,8 +4607,8 @@ static void handle_opaque_block_solid(void *varying pBlock, uint32_t cr, uint32_
 	#pragma ignore warning(perf)
 	uint32_t eb = g_bc7_mode_5_optimal_endpoints[cb];
 	color_quad_i lp, hp;
-	color_quad_i_set(&lp, er & 0xFF, eg & 0xFF, eb & 0xFF, 255);
-	color_quad_i_set(&hp, er >> 8, eg >> 8, eb >> 8, 255);
+	color_quad_i_set(&lp, er & 0xFF, eg & 0xFF, eb & 0xFF, ca);
+	color_quad_i_set(&hp, er >> 8, eg >> 8, eb >> 8, ca);
 
 	bc7_optimization_results opt;
 	opt.m_mode = 5;
@@ -4621,6 +4621,8 @@ static void handle_opaque_block_solid(void *varying pBlock, uint32_t cr, uint32_
 	opt.m_partition = 0;
 	for (uniform int i = 0; i < 16; ++i)
 		opt.m_selectors[i] = BC7E_MODE_5_OPTIMAL_INDEX;
+	for (uniform int i = 0; i < 16; ++i)
+		opt.m_alpha_selectors[i] = 0;
 	encode_bc7_block(pBlock, &opt);
 }
 
@@ -4724,20 +4726,19 @@ export void bc7e_compress_blocks(uniform uint32_t num_blocks, uniform uint64_t *
 		bool all_same = lo_r==hi_r && lo_g==hi_g && lo_b==hi_b && lo_a==hi_a;
 
 		uniform uint64_t *varying pBlock = &pBlocks[block_index * 2];
-
-		const bool has_alpha = (lo_a < 255);
-				
-		// TODO: alpha block mode 6 only
-		cif (has_alpha)
-			handle_alpha_block(pBlock, temp_pixels, pComp_params, &params, (int)lo_a, (int)hi_a);
+			
+		cif (all_same)
+			handle_block_solid(pBlock, lo_r, lo_g, lo_b, lo_a);
 		else
 		{
-			if (pComp_params->m_mode6_only)
-				handle_opaque_block_mode6(pBlock, temp_pixels, pComp_params, &params);
+			const bool has_alpha = (lo_a < 255);
+			// TODO: alpha block mode 6 only
+			cif (has_alpha)
+				handle_alpha_block(pBlock, temp_pixels, pComp_params, &params, (int)lo_a, (int)hi_a);
 			else
 			{
-				cif (all_same)
-					handle_opaque_block_solid(pBlock, lo_r, lo_g, lo_b);
+				if (pComp_params->m_mode6_only)
+					handle_opaque_block_mode6(pBlock, temp_pixels, pComp_params, &params);
 				else
 					handle_opaque_block(pBlock, temp_pixels, pComp_params, &params);
 			}
